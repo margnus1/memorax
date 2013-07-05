@@ -47,3 +47,6 @@ memorax-gui$(EXEEXT): $(srcdir)/gui.py
 	cat $(srcdir)/gui.py | sed 's#%%PYTHON%%#$(PYTHON)#g' | \
 	sed 's#%%BINARY%%#$(bindir)/memorax#g' | \
 	sed 's#%%GUI_STRING%%#@PACKAGE_NAME@ GUI @PACKAGE_VERSION@#g' > memorax-gui
+
+check-syntax: $(CHK_SOURCES)
+	$(AM_V_CXX)$(CXXCOMPILE) -Wall -Wextra -fsyntax-only $<
