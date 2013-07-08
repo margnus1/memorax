@@ -23,6 +23,7 @@ pb_container1.cpp pb_container1.h \
 pb_container2.cpp pb_container2.h \
 predicates.tcc predicates.h \
 preprocessor.h preprocessor.cpp \
+pws_constraint.h pws_constraint.cpp \
 reachability.cpp reachability.h \
 sb_constraint.cpp sb_constraint.h \
 sb_container.cpp sb_container.h \
@@ -49,4 +50,4 @@ memorax-gui$(EXEEXT): $(srcdir)/gui.py
 	sed 's#%%GUI_STRING%%#@PACKAGE_NAME@ GUI @PACKAGE_VERSION@#g' > memorax-gui
 
 check-syntax: $(CHK_SOURCES)
-	$(AM_V_CXX)$(CXXCOMPILE) -Wall -Wextra -fsyntax-only $<
+	-$(AM_V_CXX)$(CXXCOMPILE) -Wall -Wextra -fsyntax-only $<
