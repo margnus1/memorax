@@ -74,6 +74,41 @@ private:
   void pretty_print_buffer(std::stringstream &ss, const std::vector<Store> &buffer, Lang::NML nml) const;
 
   inline VecSet<int> possible_values(const ZStar<int> &buffer_value, const Lang::NML &nml) const;
+  /* Checks using various heuristics if this constraint can be reached from an
+   * initial state and returns true only if this state is unreachable.
+   * 
+   * Analogous to (the negation of) SbConstraint::ok_channel. Constraints
+   * failing these can be safely discarded. */
+  bool unreachable();
+
+  /* Does the same thing as SbConstraint::channel_pop_back, but with
+   * PwsConstraints instead */
+  std::vector<PwsConstraint*> channel_pop_back() const;
+  /* Returns the set S of PwsConstraints pwsc such that pwsc is this
+   * PwsConstraint but with the buffer of pid to nml replaced by a buffer b such
+   * that b . v is entailed by this->write_buffers[pid][nmli] where v is the
+   * last value in this->write_buffers[pid][nmli], and the upward closure of S
+   * is the set of precisely all such PwsConstraints pwsc.
+   *
+   * Pre: write_buffers[pid][nmli].size() > 0
+   */
+  std::vector<PwsConstraint*> buffer_pop_back(int pid, Lang::NML nml) const;
+
+    // Helper for the public pre
+  struct pre_constr_t{
+    pre_constr_t(PwsConstraint *pwsc) : pwsc(pwsc), channel_pop_back(false),
+                                        buffer_pop_back(false), written_nmls() {};
+    pre_constr_t(PwsConstraint *pwsc, bool channel_pop_back, 
+                 bool buffer_pop_back, VecSet<Lang::NML> wn)
+      : pwsc(pwsc), channel_pop_back(channel_pop_back),
+        buffer_pop_back(buffer_pop_back), written_nmls(wn) {};
+    PwsConstraint *pwsc;
+    bool channel_pop_back; // true iff the last message in pwsc should be popped
+    bool buffer_pop_back; // true iff the last message in pwsc should be popped
+    VecSet<Lang::NML> written_nmls; // NMLs that were written. only one if buffer_pop_bacl
+  };
+  // PRE: mlocked => slocked
+  std::list<pre_constr_t> pre(const Machine::PTransition &, bool mlocked, bool slocked) const;
 
   friend class Common;
 };
@@ -82,13 +117,13 @@ private:
 // -----------------------------------------------------------------------------
 
 inline VecSet<int> PwsConstraint::possible_values(const ZStar<int> &buffer_value, const Lang::NML &nml) const {
-    VecSet<int> ret;
     Lang::VarDecl var_decl = common.machine.get_var_decl(nml);
-    if (buffer_value.is_wild())
+    if (buffer_value.is_wild()) {
+      std::vector<int> vec;
       for (int possible_value : var_decl.domain)
-        ret.insert(possible_value);
-    else ret.insert(buffer_value.get_int());
-    return ret;
+        vec.push_back(possible_value);
+      return VecSet<int>(vec);
+    } else return VecSet<int>::singleton(buffer_value.get_int());
   };
 
 #endif // __PWS_CONSTRAINT_H__

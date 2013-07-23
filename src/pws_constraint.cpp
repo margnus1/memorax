@@ -19,6 +19,7 @@
  */
 
 #include "pws_constraint.h"
+#include "intersection_iterator.h"
 #include <iostream>
 
 PwsConstraint::Common::Common(const Machine &m) : SbConstraint::Common(m) {
@@ -71,6 +72,23 @@ PwsConstraint::PwsConstraint(const SbConstraint &s, Common &c)
 
 std::list<Constraint*> PwsConstraint::pre(const Machine::PTransition &t) const {
   std::list<Constraint*> res;
+  std::list<pre_constr_t> r = pre(t, false, false);
+  for (const pre_constr_t &constr : r) {
+    if (constr.channel_pop_back) {
+      throw new std::logic_error("PwsConstraint::pre: channel_pop_back not implemented");
+    } else if (constr.buffer_pop_back) {
+      throw new std::logic_error("PwsConstraint::pre: buffer_pop_back not implemented");
+    } else {
+      if (constr.pwsc->unreachable()) delete constr.pwsc;
+      else                            res.push_back(constr.pwsc);
+    }
+  }
+  return res;
+}
+
+std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransition &t, bool mlocked, bool slocked) const{
+  assert(slocked || !mlocked); // Precondition
+  std::list<pre_constr_t> res;
   const Lang::Stmt<int> &s = t.instruction;
   if (SbConstraint::pcs[t.pid] != t.target)
     return res;
@@ -111,9 +129,27 @@ std::list<Constraint*> PwsConstraint::pre(const Machine::PTransition &t) const {
   } break;
 
   case Lang::WRITE /* 5 */: {
-    
-    
+    assert(!slocked); //TODO: handle these cases
+    int pid = t.pid;
+    Lang::NML nml = Lang::NML(s.get_memloc(), pid);
+    int nmli = common.index(nml);
+    bool ok_buffers = (write_buffers[pid][nmli].size() > 0);
+    if (ok_buffers) {
+      value_t val = write_buffers[pid][nmli].back();
+      VecSet<Store> rstores = possible_reg_stores(reg_stores[pid], pid, s.get_expr(), val);
+      for (const Store &rstore : rstores) {
+        PwsConstraint *pwsc = new PwsConstraint(*this);
+        pwsc->pcs[pid] = t.source;
+        //pwsc->write_buffers[pid][nmli].pop_back();
+        pwsc->reg_stores[pid] = rstore;
+        res.push_back(pre_constr_t(pwsc, false, true, VecSet<Lang::NML>::singleton(nml)));
+      }
+    }
   } break;
+
+  // case Lang::LOCKED /* 6 */: {
+  //   assert(/* Why are you here? I'm not locking anything! */ false);
+  // }
 
   case Lang::UPDATE/* 8 */: {
     // Hmm, this is just copy-and-paste code reuse; could we use the code in SbConstraint::pre instead?
@@ -144,29 +180,43 @@ std::list<Constraint*> PwsConstraint::pre(const Machine::PTransition &t) const {
     
   case Lang::SERIALISE /* 9 */: {
     int pid = t.pid;
-    assert(s.get_writes().size() == 1);
-    Lang::NML nml(s.get_writes()[0], pid);
-    int nmli = common.index(nml);
     uint maxcptr = *std::max_element(cpointers.begin(), cpointers.end());
-    /* All hell breaks loose if we allow writes to more than one place at
-     * once. Sureley that cant be required! */
-    assert(channel.back().nmls.size() == 1); 
     /* We can only do serialise if the last message has the right process and
      * memory locations and isn't pointed to by any cpointer. */
-    if (maxcptr < channel.size() - 1 && channel.back().wpid == pid && 
-        channel.back().nmls[0] == nml) {
-      PwsConstraint *pwsc = new PwsConstraint(*this);
-      /* TODO: Consider if we need to add constraints where a "lost" constraint
-       * preceeds the last message. Hmm, is this what channel_pop_back does? */
-      pwsc->channel.pop_back();
-      pwsc->write_buffers[pid][nmli] = pwsc->write_buffers[pid][nmli].push_front(channel.back().store[nmli]);
+    if (maxcptr < channel.size() - 1 && channel.back().wpid == pid) {
+      /* TODO: Consider if there should be a serialise message for each unique
+       * memory location instead */
+      /* We assume that the writes in s.get_writes are sorted and unique, and
+       * then map them into normalised form, which we assume have the same ordering. */
+      std::vector<Lang::NML> vector;
+      vector.reserve(s.get_writes().size());
+      std::transform(s.get_writes().begin(), s.get_writes().end(), vector.begin(),
+                     [pid](const Lang::MemLoc<int> &ml) { return Lang::NML(ml, pid); });
+      VecSet<Lang::NML> nmls(vector);
+      // Each memory location that is both in the last message in the channel
+      // and the serialise action (and thus in the intersection of the sets) is
+      // expanded to it's own new constraint since we cannot represent a write
+      // to a set of memory locations in the buffers.
+      Intersection<VecSet<Lang::NML>, Lang::NML, VecSet<Lang::NML>::const_iterator> inter(channel.back().nmls, nmls);
+      for (const Lang::NML &nml : inter) {
+        int nmli = common.index(nml);
+        PwsConstraint *pwsc = new PwsConstraint(*this);
+        /* TODO: Consider if we need to add constraints where a "lost" constraint
+         * preceeds the last message. Hmm, is this what channel_pop_back does? */
+        // pwsc->channel.pop_back();
+        pwsc->write_buffers[pid][nmli] = pwsc->write_buffers[pid][nmli].push_front(channel.back().store[nmli]);
+        res.push_back(pre_constr_t(pwsc, true, false, VecSet<Lang::NML>::singleton(nml)));
+      }
     }
   } break;
 
   default:
-    //Log::debug << "Received unknown type of statement: " << s.get_type() << "\n";
+    Log::debug << "PwsConstraint::pre: Received unknown type of statement: " << s.get_type() << "\n";
     std::stringstream ss;
-    ss << "PwsConstraint::pre: Unknown statement type " << s.get_type() << " not implemented\n";
+    ss << "PwsConstraint::pre: Statement \"" 
+       << s.to_string(common.machine.reg_pretty_vts(t.pid), common.machine.ml_pretty_vts(t.pid))
+       << "\" of not implemented type\n Pid:" 
+       << t.pid << " " << t.source << "->" << t.target << "\n";
     throw new std::logic_error(ss.str());
   }
   return res;
@@ -234,4 +284,12 @@ Constraint::Comparison PwsConstraint::entailment_compare_buffer(const Store& a, 
       ai++; // They match
   }
   return LESS; // a is a subword of b
+}
+
+bool PwsConstraint::unreachable() {
+  /* Note: this might not be safe if new heuristics which does not translate to
+   * pso/pws is added to ok_channel. A system to use different configurations
+   * for different abstractions might be useful. */
+  if (!SbConstraint::ok_channel()) return true; 
+  return false;
 }
