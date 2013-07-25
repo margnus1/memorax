@@ -129,30 +129,77 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
   } break;
 
   case Lang::WRITE /* 5 */: {
-    assert(!slocked); //TODO: handle these cases
     int pid = t.pid;
     Lang::NML nml = Lang::NML(s.get_memloc(), pid);
     int nmli = common.index(nml);
-    bool ok_buffers = (write_buffers[pid][nmli].size() > 0);
-    if (ok_buffers) {
-      value_t val = write_buffers[pid][nmli].back();
-      VecSet<Store> rstores = possible_reg_stores(reg_stores[pid], pid, s.get_expr(), val);
-      for (const Store &rstore : rstores) {
-        PwsConstraint *pwsc = new PwsConstraint(*this);
-        pwsc->pcs[pid] = t.source;
-        //pwsc->write_buffers[pid][nmli].pop_back();
-        pwsc->reg_stores[pid] = rstore;
-        res.push_back(pre_constr_t(pwsc, false, true, VecSet<Lang::NML>::singleton(nml)));
+    /* These requrements are an extension of the requirements on the sb
+     *  model. In particular, slocked && !mlocked corresponds to the !locked
+     *  state in the sb model, and mlocked corresponds to the locked state in
+     *  the sb model. When !slocked, the sb channel and cpointers are
+     *  automatically ok since they are not touched by the write operation. */
+    bool ok_buffers = slocked ? (write_buffers[pid][nmli].size() == 0):
+                                (write_buffers[pid][nmli].size()  > 0);
+    bool ok_cpointers = true;
+    if (mlocked) {
+      ok_cpointers = cpointers[t.pid] == int(channel.size()) - 1;
+      for (int p = 0; p < int(cpointers.size()); ++p) {
+        if (p != pid && cpointers[p] == int(channel.size()) - 1)
+          ok_cpointers = false;
+      }
+    } else if (slocked) {
+      for (int p = 0; p < int(cpointers.size()); ++p) {
+        if (cpointers[p] == int(channel.size()) - 1)
+          ok_cpointers = false;
+      }
+    }
+    bool ok_channel = true;
+    if (slocked) {
+      ok_channel &= channel.back().wpid == pid;
+      ok_channel &= channel.back().nmls.count(nml);
+      if (!mlocked) ok_channel &= channel.back().nmls.size() == 1;
+    }
+    
+    if (ok_buffers && ok_cpointers && ok_channel) {
+      VecSet<int> vals = slocked ? SbConstraint::possible_values(channel.back().store, nml):
+                                   possible_values(write_buffers[pid][nmli].back(),    nml);
+      for (int val : vals) {
+        VecSet<Store> rstores = possible_reg_stores(reg_stores[pid], pid, s.get_expr(), val);
+        for (const Store &rstore : rstores) {
+          PwsConstraint *pwsc = new PwsConstraint(*this);
+          pwsc->pcs[pid] = t.source;
+          if (slocked) pwsc->channel.back().store = pwsc->channel.back().store.assign(nmli, val);
+          else         pwsc->write_buffers[pid][nmli] = val;
+          pwsc->reg_stores[pid] = rstore;
+          res.push_back(pre_constr_t(pwsc, slocked, !slocked, VecSet<Lang::NML>::singleton(nml)));
+        }
       }
     }
   } break;
+ 
+  case Lang::LOCKED /* 6 */: {
+    if (s.get_writes().size() == 0 || cpointers[t.pid] == int(channel.size()) - 1) {
+      for (int i = 0; i < s.get_statement_count(); ++i){
+        Machine::PTransition ti(t.source, *s.get_statement(i), t.target, t.pid);
+        std::list<pre_constr_t> v = pre(ti, true, true);
+        res.insert(res.end(), v.begin(), v.end());
+      }
+    } else throw new std::logic_error("Should this happen?");
+  } break;
 
-  // case Lang::LOCKED /* 6 */: {
-  //   assert(/* Why are you here? I'm not locking anything! */ false);
-  // }
+  case Lang::SLOCKED: {
+    if(s.get_writes().size() == 0 || cpointers[t.pid] == int(channel.size()) - 1) {
+      for (int i = 0; i < s.get_statement_count(); ++i) {
+        Machine::PTransition ti(t.source, *s.get_statement(i), t.target, t.pid);
+        std::list<pre_constr_t> v = pre(ti, mlocked, true);
+        res.insert(res.end(), v.begin(), v.end());
+      }
+    } else throw new std::logic_error("Should this happen?");
+  } break;
 
   case Lang::UPDATE/* 8 */: {
-    // Hmm, this is just copy-and-paste code reuse; could we use the code in SbConstraint::pre instead?
+    assert(!mlocked);
+    // Hmm, this is just copy-and-paste code reuse; could we use the code in
+    // SbConstraint::pre instead?
     VecSet<Lang::NML> snmls;
     for (Lang::MemLoc<int> ml : s.get_writes()) 
       snmls.insert(Lang::NML(ml, t.pid));
@@ -179,6 +226,7 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
   } break;
     
   case Lang::SERIALISE /* 9 */: {
+    assert(!slocked);
     int pid = t.pid;
     uint maxcptr = *std::max_element(cpointers.begin(), cpointers.end());
     /* We can only do serialise if the last message has the right process and
