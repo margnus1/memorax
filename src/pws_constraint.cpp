@@ -34,12 +34,24 @@ PwsConstraint::Common::Common(const Machine &m) : SbConstraint::Common(m) {
         VecSet<Lang::MemLoc<int>> mls;
         for (const Lang::NML &nml : header.nmls)
           mls.insert(nml.localize(p));
-        // TODO: Does this risk breaking memory address references to the elements of transitions_to_pc (and possibly others)?
+        /* Note: This does risk breaking memory address references to the
+         * elements of all_transitions. We recompute transitions_by_pc below,
+         * but there might be others */
         all_transitions.push_back(Machine::PTransition(i, Lang::Stmt<int>::serialise(mls), i, p));
-        transitions_by_pc[p][i].push_back(&(all_transitions[all_transitions.size() - 1]));
       }
     }
   }
+
+  /* We recompute transitions_by_pc in case the transitions has changed their
+   * memory addresses */
+  transitions_by_pc.clear();
+  for(unsigned p = 0; p < machine.automata.size(); ++p){
+    transitions_by_pc.push_back(std::vector<std::vector<const Machine::PTransition*> >(machine.automata[p].get_states().size()));
+  }
+  for(unsigned i = 0; i < all_transitions.size(); ++i){
+    transitions_by_pc[all_transitions[i].pid][all_transitions[i].target].push_back(&all_transitions[i]);
+  }
+
   // TODO: make last_msgs work for PSO (currently disabled)
   // TODO: Ponder if can_have_pending needs modification
   //throw new std::logic_error("PwsConstraint::Common::Common: Not implemented");
@@ -176,27 +188,28 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
     }
   } break;
  
-  case Lang::LOCKED /* 6 */: {
-    if (s.get_writes().size() == 0 || cpointers[t.pid] == int(channel.size()) - 1) {
-      for (int i = 0; i < s.get_statement_count(); ++i){
+  case Lang::LOCKED: {
+    if (s.get_writes().size() == 0 || (cpointers[t.pid] == int(channel.size()) - 1
+                                       && is_fully_serialised(s.get_writes(), t.pid))) {
+      for (int i = 0; i < s.get_statement_count(); ++i) {
         Machine::PTransition ti(t.source, *s.get_statement(i), t.target, t.pid);
         std::list<pre_constr_t> v = pre(ti, true, true);
         res.insert(res.end(), v.begin(), v.end());
       }
-    } else throw new std::logic_error("Should this happen?");
+    }
   } break;
 
   case Lang::SLOCKED: {
-    if(s.get_writes().size() == 0 || cpointers[t.pid] == int(channel.size()) - 1) {
+    if (s.get_writes().size() == 0 || is_fully_serialised(s.get_writes(), t.pid))  {
       for (int i = 0; i < s.get_statement_count(); ++i) {
         Machine::PTransition ti(t.source, *s.get_statement(i), t.target, t.pid);
         std::list<pre_constr_t> v = pre(ti, mlocked, true);
         res.insert(res.end(), v.begin(), v.end());
       }
-    } else throw new std::logic_error("Should this happen?");
+    }
   } break;
 
-  case Lang::UPDATE/* 8 */: {
+  case Lang::UPDATE: {
     assert(!mlocked);
     // Hmm, this is just copy-and-paste code reuse; could we use the code in
     // SbConstraint::pre instead?
@@ -215,6 +228,7 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
           for (int p = 0; p < pwsc->cpointers.size(); p++) {
             if (p != t.pid) pwsc->cpointers[p]++;
           }
+          res.push_back(pwsc);
         }
       } else {
         /* Update with a message in the channel */
@@ -237,21 +251,21 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
       /* We assume that the writes in s.get_writes are sorted and unique, and
        * then map them into normalised form, which we assume have the same ordering. */
       std::vector<Lang::NML> vector;
-      vector.reserve(s.get_writes().size());
-      std::transform(s.get_writes().begin(), s.get_writes().end(), vector.begin(),
-                     [pid](const Lang::MemLoc<int> &ml) { return Lang::NML(ml, pid); });
+      for (const Lang::MemLoc<int> &ml : s.get_writes()) {
+        vector.push_back(Lang::NML(ml, pid));
+      }
       VecSet<Lang::NML> nmls(vector);
       // Each memory location that is both in the last message in the channel
       // and the serialise action (and thus in the intersection of the sets) is
       // expanded to it's own new constraint since we cannot represent a write
       // to a set of memory locations in the buffers.
+      
       Intersection<VecSet<Lang::NML>, Lang::NML, VecSet<Lang::NML>::const_iterator> inter(channel.back().nmls, nmls);
       for (const Lang::NML &nml : inter) {
         int nmli = common.index(nml);
         PwsConstraint *pwsc = new PwsConstraint(*this);
         /* TODO: Consider if we need to add constraints where a "lost" constraint
          * preceeds the last message. Hmm, is this what channel_pop_back does? */
-        // pwsc->channel.pop_back();
         pwsc->write_buffers[pid][nmli] = pwsc->write_buffers[pid][nmli].push_front(channel.back().store[nmli]);
         res.push_back(pre_constr_t(pwsc, true, false, VecSet<Lang::NML>::singleton(nml)));
       }
@@ -268,6 +282,14 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
     throw new std::logic_error(ss.str());
   }
   return res;
+}
+
+bool PwsConstraint::is_fully_serialised(const std::vector<Lang::MemLoc<int>> &mls, int pid) const {
+  for (const Lang::MemLoc<int> &ml : mls) {
+    Lang::NML nml(ml, pid);
+    if (write_buffers[pid][common.index(nml)].size() != 0) return false;  
+  }
+  return true;
 }
 
 std::string PwsConstraint::to_string() const throw() {

@@ -94,6 +94,11 @@ private:
    */
   std::vector<PwsConstraint*> buffer_pop_back(int pid, Lang::NML nml) const;
 
+  /* Checks if a set of memory locations are fully serialised, which is a
+   * requirement in order to take a s- or mfence transition in the PWS model,
+   * and equivalently be able to do a write in a LOCKED or SLOCKED block. */
+  bool is_fully_serialised(const std::vector<Lang::MemLoc<int>> &mls, int pid) const;
+
     // Helper for the public pre
   struct pre_constr_t{
     pre_constr_t(PwsConstraint *pwsc) : pwsc(pwsc), channel_pop_back(false),
