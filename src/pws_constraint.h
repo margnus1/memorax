@@ -63,6 +63,8 @@ public:
   virtual Comparison entailment_compare(const SbConstraint &sbc) const;
   virtual Comparison entailment_compare(const PwsConstraint &sbc) const;
 
+  static void test();
+  static void test_pre();
 private:
   Common &common;
 
