@@ -35,7 +35,7 @@ unique_ptr<Machine> get_machine(istream &is) {
   return m2;
 }
 
-list<unique_ptr<PwsConstraint>> test_pre_sequence(string name, const Machine& m, vector<Machine::PTransition> trans) {
+void test_pre_sequence(string name, const Machine& m, vector<Machine::PTransition> trans) {
   PwsConstraint::Common common(m);
   function<string(Machine::PTransition)> pttostr = [m](Machine::PTransition pt) 
     { return pt.to_string(m.reg_pretty_vts(pt.pid), m.ml_pretty_vts(pt.pid)); };
@@ -45,14 +45,15 @@ list<unique_ptr<PwsConstraint>> test_pre_sequence(string name, const Machine& m,
     transform(bs.begin(), bs.end(), back_inserter(constraints),
               [](Constraint *c) { return unique_ptr<PwsConstraint>(dynamic_cast<PwsConstraint*>(c)); });
   }
+
   for (Machine::PTransition pt : trans) {
     bool in_any_partred = false;
     list<unique_ptr<PwsConstraint>> news;
     for (const unique_ptr<PwsConstraint> &c : constraints) {
       {
         auto trans = c->partred();
-        if (!any_of(trans.begin(), trans.end(), [pt](const Machine::PTransition *t) { return *t == pt; })) 
-          break;
+        if (!any_of(trans.begin(), trans.end(), [pt](const Machine::PTransition *t) { return *t == pt; }))
+          continue;
       }
       in_any_partred = true;
       list<Constraint*> pres = c->pre(pt);
@@ -60,54 +61,59 @@ list<unique_ptr<PwsConstraint>> test_pre_sequence(string name, const Machine& m,
                 [](Constraint *c) { return unique_ptr<PwsConstraint>(dynamic_cast<PwsConstraint*>(c)); });
     }
     if (!in_any_partred) {
-      Log::debug << "  " << name << ": Transition \"" << pttostr(pt) << "\" was not suggested by any PwsConstraint::partred\n";
+      Log::debug << "  " << name << ": Transition \"" << pttostr(pt) << "\" was not suggested by any PwsConstraint::partred " 
+                 << (news.empty() ? "and produced no constraints\n" : "but produced new constraints\n");
       Test::inner_test(name, false);
-      return news;
+      return;
     }
     if (news.empty()) {
       Log::debug << "  " << name << ": Transition \"" << pttostr(pt) << "\" produced zero new constraints\n";
       Test::inner_test(name, false);
-      return news;
+      return;
     }
+    Log::extreme << "  " << name << ": Transition \"" << pttostr(pt) << "\" produced the following constraints\n";
+    for (const unique_ptr<PwsConstraint> &c : news) Log::extreme << c->to_string() << "\n";
     swap(constraints, news);
   }
-  Test::inner_test(name, true);
-  return constraints;
+  Test::inner_test(name, any_of(constraints.begin(), constraints.end(), 
+                                [](const unique_ptr<PwsConstraint> &c) { return c->is_init_state(); }));
 }
 
 void PwsConstraint::test_pre() {
  stringstream ss;
-  ss << "forbidden\n"
-     << "  CS CS\n"
-     << "data\n"
-     << "  a = 0 : [0:1]\n"
-     << "  b = 0 : [0:1]\n"
-     << "process\n"
-     << "text\n"
-     << "    write: a := 1;\n"
-     << "    write: b := 1;\n"
-     << "CS: nop\n"
-     << "process\n"
-     << "text\n"
-     << "    read:  b  = 1;\n"
-     << "    read:  a  = 0;\n"
-     << "CS: nop\n";
-  unique_ptr<Machine> m = get_machine(ss);
+  ss << R"(
+forbidden
+  CS CS
+data
+  a = 0 : [0:1]
+  b = 0 : [0:1]
+  
+process
+text
+    write: a := 1;
+    write: b := 1;
+CS: nop
+
+process
+text
+    read:  b  = 1;
+    read:  a  = 0;
+CS: nop
+)";
+  Machine m = *get_machine(ss);
   vector<Machine::PTransition> test{
-    {2, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(0))), 2, 1},
-    {2, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(0))), 2, 0},
-    {2, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(1))), 2, 0},
-    {2, Stmt<int>::serialise(VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(0))), 2, 0},
-    {**m->automata[1].get_states()[1].fwd_transitions.begin(), /* read: a = 0 */         1},
-    {**m->automata[1].get_states()[0].fwd_transitions.begin(), /* read: b = 1 */         1},
-    {0, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(1))), 0, 1},
-    {2, Stmt<int>::serialise(VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(1))), 2, 0},
-    {**m->automata[0].get_states()[1].fwd_transitions.begin(), /* write: b := 1 */       0},
-    {**m->automata[0].get_states()[0].fwd_transitions.begin(), /* write: a := 1 */       0}
+    {2, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(0))), 2, 0}, // P0: update(a, P0)
+    {2, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(0))), 2, 1}, //   P1: update(a, P0)
+    {2, Stmt<int>::serialise(VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(0))), 2, 0}, // P0: serialise: a
+    {**m.automata[1].get_states()[1].fwd_transitions.begin(),                            1}, //   P1: read: a = 0
+    {**m.automata[1].get_states()[0].fwd_transitions.begin(),                            1}, //   P1: read: b = 1
+    {2, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(1))), 2, 0}, // P0: update(b, P0)
+    {0, Stmt<int>::update(0, VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(1))), 0, 1}, //   P1: update(b, P0)
+    {2, Stmt<int>::serialise(VecSet<MemLoc<int>>::singleton(MemLoc<int>::global(1))), 2, 0}, // P0: serialise: b
+    {**m.automata[0].get_states()[1].fwd_transitions.begin(),                            0}, // P0: write: b := 1
+    {**m.automata[0].get_states()[0].fwd_transitions.begin(),                            0}  // P0: write: a := 1
   };
-  auto cs = test_pre_sequence("simple reorder", *m, test);
-  Test::inner_test("simple reorder reach", any_of(cs.begin(), cs.end(), [](const unique_ptr<PwsConstraint> &c)
-                                                                          { return c->is_init_state(); }));
+  test_pre_sequence("simple reorder", m, test);
 }
 
 void PwsConstraint::test() {

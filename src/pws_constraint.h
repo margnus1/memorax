@@ -65,6 +65,10 @@ public:
 
   static void test();
   static void test_pre();
+
+protected:
+  virtual bool propagate_value_in_channel(const Lang::NML &nml, int nmli = -1);
+
 private:
   Common &common;
 
@@ -111,8 +115,8 @@ private:
         buffer_pop_back(buffer_pop_back), written_nmls(wn) {};
     PwsConstraint *pwsc;
     bool channel_pop_back; // true iff the last message in pwsc should be popped
-    bool buffer_pop_back; // true iff the last message in pwsc should be popped
-    VecSet<Lang::NML> written_nmls; // NMLs that were written. only one if buffer_pop_bacl
+    bool buffer_pop_back; // true iff the last value in the buffer of written_nmls[0] in pwsc should be popped
+    VecSet<Lang::NML> written_nmls; // NMLs that were written. only one if buffer_pop_back
   };
   // PRE: mlocked => slocked
   std::list<pre_constr_t> pre(const Machine::PTransition &, bool mlocked, bool slocked) const;
