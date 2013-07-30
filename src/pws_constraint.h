@@ -66,6 +66,11 @@ public:
   static void test();
   static void test_pre();
 
+  /* Return the set S such that the buffer of process p to memory location nml
+   * is non-empty iff (p, nml) is a member of S. S is represented as an ordered
+   * vector. */
+  std::vector<std::pair<int, Lang::NML> > get_filled_buffers() const;
+
 protected:
   virtual bool propagate_value_in_channel(const Lang::NML &nml, int nmli = -1);
 

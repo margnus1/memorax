@@ -325,7 +325,7 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
   return res;
 }
 
-bool PwsConstraint::is_fully_serialised(const std::vector<Lang::MemLoc<int>> &mls, int pid) const {
+bool PwsConstraint::is_fully_serialised(int pid) const {
   for (unsigned nmli = 0; nmli < write_buffers[pid].size(); nmli++) {
     if (write_buffers[pid][nmli].size() != 0) return false;
   }
@@ -440,6 +440,17 @@ Constraint::Comparison PwsConstraint::entailment_compare_buffer(const Store& a, 
       ai++; // They match
   }
   return LESS; // a is a subword of b
+}
+
+std::vector<std::pair<int, Lang::NML> > PwsConstraint::get_filled_buffers() const {
+  std::vector<std::pair<int, Lang::NML> > res;
+  for (int p = 0; p < write_buffers.size(); ++p) {
+    for (Lang::NML nml : common.nmls) {
+      if (write_buffers[p][common.index(nml)].size() > 0)
+        res.push_back(std::pair<int, Lang::NML>(p, nml));
+    }
+  }
+  return res;
 }
 
 bool PwsConstraint::unreachable() {
