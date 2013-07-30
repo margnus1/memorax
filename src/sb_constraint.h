@@ -382,6 +382,7 @@ private:
   /*****************/
   /* Configuration */
   /*****************/
+protected:
   static const bool use_last_msg;
   static const bool use_last_msgs_vec; // Note: will nullify use_last_msg
   static const bool use_updates_only_after_reads;
