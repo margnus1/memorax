@@ -21,7 +21,7 @@
 #include "pws_pso_bwd.h"
 
 Trace *PwsPsoBwd::convert_trace(Trace *trace, SbConstraint::Common *common) const {
-  Trace *temp = SbTsoBwd::convert_trace(trace, common);
+  std::unique_ptr<Trace> temp(SbTsoBwd::convert_trace(trace, common));
   // Filter out serialise transitions
   Trace *result = new Trace(0);
   for (int i = 1; i <= temp->size(); ++i) {
@@ -32,6 +32,12 @@ Trace *PwsPsoBwd::convert_trace(Trace *trace, SbConstraint::Common *common) cons
 }
 
 bool PwsPsoBwd::produces_message(const Lang::Stmt<int> &s) const{
+  assert(s.get_writes().size() == 0    ||
+         s.get_type() == Lang::UPDATE  ||
+         s.get_type() == Lang::WRITE   ||
+         s.get_type() == Lang::LOCKED  ||
+         s.get_type() == Lang::SLOCKED ||
+         s.get_type() == Lang::SERIALISE);
   return (s.get_writes().size() > 0 &&
           s.get_type() != Lang::UPDATE &&
           s.get_type() != Lang::WRITE);
