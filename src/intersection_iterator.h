@@ -41,13 +41,10 @@ public:
       if (current_A == A_end) return *this; // We are at the end
       ++current_A;
       ++current_B;
-      while (*current_A != *current_B) {
-        if (*current_B < *current_A) { if (++current_B == B_end) { while(current_A != A_end) ++current_A; return *this; } }
-        else                         { if (++current_A == A_end) { while(current_B != B_end) ++current_B;  return *this; } }
-      }
+      find_next();
       return *this;
     }
-    const_iterator operator++(int)  {
+    const_iterator operator++(int) {
       const_iterator old = *this;
       ++this;
       return old;
@@ -61,12 +58,7 @@ public:
     const T &operator *() const { return *current_A; }
 
   private:
-    inner_iterator current_A, current_B, A_end, B_end;
-    const_iterator(inner_iterator A_begin, 
-                   inner_iterator B_begin,
-                   inner_iterator A_end,
-                   inner_iterator B_end) :
-      current_A(A_begin), current_B(B_begin), A_end(A_end), B_end(B_end) {
+    void find_next() {
       while (true) {
         if (current_A == A_end) { while(current_B != B_end) ++current_B; return; }
         if (current_B == B_end) { while(current_A != A_end) ++current_A; return; }
@@ -74,6 +66,14 @@ public:
         else if (*current_A < *current_B) ++current_A;
         else                              break;
       }
+    }
+    inner_iterator current_A, current_B, A_end, B_end;
+    const_iterator(inner_iterator A_begin,
+                   inner_iterator B_begin,
+                   inner_iterator A_end,
+                   inner_iterator B_end) :
+      current_A(A_begin), current_B(B_begin), A_end(A_end), B_end(B_end) {
+      find_next();
     }
     const_iterator(inner_iterator A_end, inner_iterator B_end) :
       current_A(A_end), current_B(B_end), A_end(A_end), B_end(B_end) {}
