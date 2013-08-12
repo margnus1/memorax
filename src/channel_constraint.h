@@ -68,7 +68,6 @@ public:
   class Common : public Constraint::Common{
   public:
     Common(const Machine &m);
-    virtual ~Common() noexcept {};
     const Machine &machine;
 
     /* Constructs and returns a list of bad states based on the

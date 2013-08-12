@@ -77,7 +77,7 @@ public:
     }
     const_iterator(inner_iterator A_end, inner_iterator B_end) :
       current_A(A_end), current_B(B_end), A_end(A_end), B_end(B_end) {}
-    friend Intersection;
+    friend class Intersection;
   };
 
   const_iterator begin() { return const_iterator(A.begin(), B.begin(), A.end(), B.end()); }

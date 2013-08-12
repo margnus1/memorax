@@ -28,6 +28,8 @@ Trace *PwsPsoBwd::convert_trace(Trace *trace, ChannelConstraint::Common *cmn) co
  trace->print(Log::debug,Log::extreme,Log::json,common.machine);
  Log::extreme << "\n\n";
 
+ typedef std::pair<int, int> p;
+
   /* Find values lost in the buffer which we convert to messages lost in the
    * channel, which ChannelBwd::convert_trace then can complete the repairs of
    * the trace on. */
@@ -52,22 +54,22 @@ Trace *PwsPsoBwd::convert_trace(Trace *trace, ChannelConstraint::Common *cmn) co
         assert(pwsc1.write_buffers[pid][nmli].size() == pwsc2.write_buffers[pid][nmli].size());
         Log::debug << "Write \"" << trans->to_string(common.machine) << "\" hides buffer value "
                    << pwsc1.write_buffers[pid][nmli].back().to_string() << std::endl;
-        lost_values[{pid, nmli}].back().push_back(pwsc1.write_buffers[pid][nmli].back());
+        lost_values[p(pid, nmli)].back().push_back(pwsc1.write_buffers[pid][nmli].back());
       } else {
         /* No values lost in the buffer. */
-        lost_values[{pid, nmli}].push_back({});
+        lost_values[p(pid, nmli)].push_back({});
       }
     } break;
     case Lang::SERIALISE: {
       assert(s.get_writes().size() == 1);
       Lang::NML nml(s.get_writes()[0], pid);
       int nmli = common.index(nml);
-      for (ZStar<int> lost_value : lost_values[{pid, nmli}].front()) {
+      for (ZStar<int> lost_value : lost_values[p(pid, nmli)].front()) {
         std::unique_ptr<PwsConstraint> clone(pwsc2.clone());
         clone->channel.back().store = clone->channel.back().store.assign(nmli, lost_value);
         temp->push_back(*trans, clone.release());
       }
-      lost_values[{pid, nmli}].pop_front();
+      lost_values[p(pid, nmli)].pop_front();
     } break;
     default:
       assert(pwsc1.write_buffers == pwsc2.write_buffers);
