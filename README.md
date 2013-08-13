@@ -113,8 +113,7 @@ Installation Options
    can find on your path. If that version happens to be Python 3 or
    above, the installation will warn you that Tkinter was not found,
    even when it is installed. In order to be able to use the GUI, you
-   must manually specify the path to Python ver. >= 2.6 < 3.0. For
-   example:
+   must manually specify the path to Python 2. For example:
 
     $ ./configure PYTHON=/usr/bin/python2
 
@@ -126,7 +125,7 @@ Troubleshooting
    In case you get the following error message when trying to use the
    PB abstraction:
 
-   Error: MSatFailure: Program is not compiled with MathSAT.
+    Error: MSatFailure: Program is not compiled with MathSAT.
 
    In order to use predicate abstraction, (e.g. the PB abstraction)
    the Memorax tool needs to be compiled with MathSAT. To solve the
