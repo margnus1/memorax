@@ -145,9 +145,6 @@ Trace *ChannelContainer::clear_and_get_trace(Constraint *c){
 };
 
 void ChannelContainer::clear(){
-#ifndef NDEBUG
-  stats.array = 0;
-#endif
   if(print_every_state_on_clear){
     Log::extreme << "  **************************************\n";
     Log::extreme << "  *** All constraints in visited set ***\n";

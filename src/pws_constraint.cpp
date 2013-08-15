@@ -526,7 +526,6 @@ std::list<PwsConstraint::pre_constr_t> PwsConstraint::pre(const Machine::PTransi
           if (locked) pwsc->channel.back().store = pwsc->channel.back().store.assign(nmli, val);
           else         pwsc->write_buffers[pid][nmli].assign(pwsc->write_buffers[pid][nmli].size() - 1, val);
           pwsc->reg_stores[pid] = rstore;
-          if (locked) pwsc->cpointers[pid]--;
           res.push_back(pre_constr_t(pwsc, locked, !locked, VecSet<Lang::NML>::singleton(nml)));
         }
       }

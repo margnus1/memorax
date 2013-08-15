@@ -178,22 +178,17 @@ private:
     stats_t() 
       : longest_channel(0),
         longest_comparable_array(0),
-        invalidate_count(0),
-        array(0) {};
+        invalidate_count(0) {};
     int longest_channel;
     int longest_comparable_array;
-    const std::vector<CWrapper*> *array;
     int invalidate_count;
     void print(){
       Log::debug << " ===============================\n"
                  << " = ChannelContainer statistics =\n"
                  << " ===============================\n"
                  << " heaviest constraint: " << longest_channel << "\n"
-                 << " longest comparable array: " << longest_comparable_array << "\n";
-      if (array) 
-        for (CWrapper *cw : *array)
-          Log::extreme << cw->sbc->to_string() << "\n";
-      Log::debug << " invalidated: " << invalidate_count << "\n";
+                 << " longest comparable array: " << longest_comparable_array << "\n"
+                 << " invalidated: " << invalidate_count << "\n";
     };
   };
 
@@ -208,7 +203,6 @@ private:
 #ifndef NDEBUG
     if (stats.longest_comparable_array < v.size()) { 
       stats.longest_comparable_array = v.size();
-      stats.array = &v;
    }
 #endif
   };
