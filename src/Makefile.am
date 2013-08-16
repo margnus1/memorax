@@ -9,7 +9,7 @@ cegar_reachability.cpp cegar_reachability.h \
 channel_bwd.h channel_bwd.cpp \
 channel_constraint.h channel_constraint.cpp \
 channel_container.cpp channel_container.h \
-channel_trie.h channel_trie.cpp \
+channel_trie.h \
 cmsat.h \
 constraint_container1.cpp constraint_container1.h \
 constraint_container.h \

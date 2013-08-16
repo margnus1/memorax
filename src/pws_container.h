@@ -29,8 +29,8 @@ public:
   PwsContainer() : ChannelContainer() {};
   virtual void clear();
 protected:
-  virtual std::vector<CWrapper*> &get_F_set(CWrapper *);
-  virtual void visit_F(std::function<void(std::vector<CWrapper*>&)>);
+  virtual ChannelTrie<CWrapper> &get_F_set(CWrapper *);
+  virtual void visit_F(std::function<void(ChannelTrie<CWrapper>&)>);
 private:
 /* F[pcs][chr][bx] maps to the set of all constraints in F that have program
  * counters pcs, channel characterization chr, and filled buffers bx
@@ -38,7 +38,7 @@ private:
 std::map<std::vector<int>,
          std::map<std::vector<ChannelConstraint::MsgCharacterization>,
                   std::map<std::vector<std::pair<int, Lang::NML> >,
-                           std::vector<CWrapper *> > > > F;
+                           ChannelTrie<CWrapper> > > > F;
 
 };
 

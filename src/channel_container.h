@@ -24,6 +24,7 @@
 #include "constraint_container.h"
 #include "sb_constraint.h"
 #include "ticket_queue.h"
+#include "channel_trie.h"
 
 /* A constraint container meant for ChannelConstraints. Uses
  * ChannelConstraint::entailment_compare for comparison and entailment upon
@@ -44,25 +45,25 @@ public:
 protected:
   /* Keeps a ChannelConstraint and some extra information about it. */
   struct CWrapper{
-    CWrapper(ChannelConstraint *sbc, CWrapper *parent = 0, const Machine::PTransition *pt = 0)
-      : sbc(sbc), parent(parent), p_transition(pt), valid(true) {};
+    CWrapper(ChannelConstraint *chc, CWrapper *parent = 0, const Machine::PTransition *pt = 0)
+      : chc(chc), parent(parent), p_transition(pt), valid(true) {};
     ~CWrapper(){
-      if(sbc){
-        delete sbc;
+      if(chc){
+        delete chc;
       }
     };
     /* The constraint itself */
-    ChannelConstraint *sbc;
-    /* The wrapper around the parent of sbc.
-     * Null if sbc is a root constraint. */
+    ChannelConstraint *chc;
+    /* The wrapper around the parent of chc.
+     * Null if chc is a root constraint. */
     CWrapper *parent;
-    /* The transition by which parent transitioned into sbc.
+    /* The transition by which parent transitioned into chc.
      * Null if parent is null.
      *
      * The transition is not owned by the CWrapper. The pointer points
      * to some transition which ownership lies outside of the
      * ChannelContainer. (Most likely in
-     * SbConstraint::Common::all_transitions.)
+     * Chconstraint::Common::all_transitions.)
      */
     const Machine::PTransition *p_transition;
     /* A vector containing pointers to all CWrappers cw such that
@@ -76,6 +77,7 @@ protected:
     /* The ticket of this constraint in Q */
     long Q_ticket;
   };
+  typedef std::unique_ptr<CWrapper> OwnedCWrapper;
 
   /* F is partitioned by some property p(c) of a constraint c such that p(a) !=
    * p(b) only if a and b are incomparable.  
@@ -84,8 +86,8 @@ protected:
    * order to allow changing the property p via inheritance, access to F must be
    * done through get_F_set(c) which returns the partition set of c and visit_F(f)
    * which calls f(S) on each non-empty partition set S. */
-  virtual std::vector<CWrapper*> &get_F_set(CWrapper *);
-  virtual void visit_F(std::function<void(std::vector<CWrapper*>&)>);
+  virtual ChannelTrie<CWrapper> &get_F_set(CWrapper *);
+  virtual void visit_F(std::function<void(ChannelTrie<CWrapper>&)>);
 
 private:
   /* F[pcs][chr] maps to the set of all constraints in F that have
@@ -93,29 +95,29 @@ private:
    *
    * The sets are represented as distinct, unordered vectors.
    */
-  std::map<std::vector<int>,std::map<std::vector<ChannelConstraint::MsgCharacterization> , std::vector<CWrapper*> > > F;
+ std::map<std::vector<int>,std::map<std::vector<ChannelConstraint::MsgCharacterization> , ChannelTrie<CWrapper> > > F;
   /* Stores pointers to the wrappers that have been invalidated. They
    * should not be considered in the analysis, but should be
    * deallocated upon destruction of the container. */
-  std::vector<CWrapper*> invalid_from_F;
+  std::vector<OwnedCWrapper> invalid_from_F;
   
   /* For each constraint c in F, ptr_to_F[c] is a pointer to its
    * CWrapper in F.
    */
   std::map<ChannelConstraint*,CWrapper*> ptr_to_F;
 
-  /* Caches (sbc,cw) for the last constraint sbc that was popped, and
-   * cw == ptr_to_F[sbc].
+  /* Caches (chc,cw) for the last constraint chc that was popped, and
+   * cw == ptr_to_F[chc].
    */
   std::pair<ChannelConstraint*,CWrapper*> last_popped;
 
-  /* Returns ptr_to_F[sbc]. Uses the cache last_popped if possible.
+  /* Returns ptr_to_F[chc]. Uses the cache last_popped if possible.
    */
-  CWrapper *get_cwrapper(ChannelConstraint *sbc) const{
-    if(last_popped.first == sbc){
+  CWrapper *get_cwrapper(ChannelConstraint *chc) const{
+    if(last_popped.first == chc){
       return last_popped.second;
     }else{
-      return ptr_to_F.at(sbc);
+      return ptr_to_F.at(chc);
     }
   };
 
@@ -126,10 +128,10 @@ private:
   class ChannelPrioTicketQueue{
   public:
     long push(CWrapper *cw){
-      if(int(queues.size()) <= cw->sbc->get_weight()){
-        queues.resize(cw->sbc->get_weight()+1);
+      if(int(queues.size()) <= cw->chc->get_weight()){
+        queues.resize(cw->chc->get_weight()+1);
       }
-      return queues[cw->sbc->get_weight()].push(cw);
+      return queues[cw->chc->get_weight()].push(cw);
     };
     CWrapper *pop(){
       /* Give priority to shorter channels. */
@@ -160,34 +162,35 @@ private:
    * ownership. */
   ChannelPrioTicketQueue Q;
 
-  bool insert(CWrapper *cw);
+  bool insert(OwnedCWrapper cw);
 
   /* The number of valid constraints in F */
   int f_size;
   /* The number of valid constraints in Q */
   int q_size;
 
-  /* Set cw->valid = false, remove it from Q and F.
+  /* Set cw->valid = false, remove it from Q.
    *
-   * If use_genealogy, recursively do the same for all children of cw.
+   * If use_genealogy, recursively do the same for all children of cw, and
+   * delete them from F.
    */
-  void invalidate(CWrapper *cw, std::vector<CWrapper*> *Fv = 0);
+  void invalidate(OwnedCWrapper cw);
 
 #ifndef NDEBUG
   struct stats_t{
-    stats_t() 
+    stats_t()
       : longest_channel(0),
-        longest_comparable_array(0),
+        most_comparisons(0),
         invalidate_count(0) {};
     int longest_channel;
-    int longest_comparable_array;
+    int most_comparisons;
     int invalidate_count;
     void print(){
       Log::debug << " ===============================\n"
                  << " = ChannelContainer statistics =\n"
                  << " ===============================\n"
                  << " heaviest constraint: " << longest_channel << "\n"
-                 << " longest comparable array: " << longest_comparable_array << "\n"
+                 << " most comparisons: " << most_comparisons << "\n"
                  << " invalidated: " << invalidate_count << "\n";
     };
   };
@@ -199,11 +202,9 @@ private:
     stats.longest_channel = std::max(chanlen,stats.longest_channel);
 #endif
   };
-  void update_longest_comparable_array(const std::vector<CWrapper*> &v){
+  void update_most_comparisons(int comparisons){
 #ifndef NDEBUG
-    if (stats.longest_comparable_array < v.size()) { 
-      stats.longest_comparable_array = v.size();
-   }
+    stats.most_comparisons = std::max(comparisons, stats.most_comparisons);
 #endif
   };
   void inc_invalidate_count(){
