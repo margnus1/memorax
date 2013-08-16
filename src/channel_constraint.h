@@ -310,6 +310,7 @@ private:
 
   friend class ChannelBwd;
   friend class ChannelContainer;
+  friend class ChannelTrie;
 };
 
 /*******************/
