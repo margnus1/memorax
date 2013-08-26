@@ -56,6 +56,3 @@ memorax-gui$(EXEEXT): $(srcdir)/gui.py
 	sed 's#%%BINARY%%#$(bindir)/memorax#g' | \
 	sed 's#%%GUI_STRING%%#@PACKAGE_NAME@ GUI @PACKAGE_VERSION@#g' > memorax-gui
 	$(AM_V_at)chmod +x memorax-gui
-
-check-syntax: $(CHK_SOURCES)
-	-$(AM_V_CXX)$(CXXCOMPILE) -Wall -Wextra -fsyntax-only $<
